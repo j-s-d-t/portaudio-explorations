@@ -1,12 +1,12 @@
-{-# LANGUAGE ViewPatterns, LambdaCase #-}
 {-# LANGUAGE ApplicativeDo #-}
-import System.PortAudio
-import Control.Concurrent
-import Control.Monad
-import Linear (V2(..))
-import qualified Data.Vector as V
+{-# LANGUAGE LambdaCase    #-}
+import           Control.Concurrent
+import           Control.Monad
+import qualified Data.Vector                  as V
 import qualified Data.Vector.Storable.Mutable as MV
-import Options.Applicative
+import           Linear                       (V2 (..))
+import           Options.Applicative
+import           System.PortAudio
 
 -- Set the periods
 period :: Int
@@ -35,26 +35,28 @@ table3 = V.fromList [sin t | i <- [0..period3 - 1], let t = fromIntegral i / fro
 table4 :: V.Vector Float
 table4 = V.fromList [sin t | i <- [0..period4 - 1], let t = fromIntegral i / fromIntegral period4 * 2 * pi]
 
+
+
+go :: Int -> Int -> Int -> MV.IOVector (V2 Float) -> IO ()
+go i0 i n o
+  | i == n = return ()
+  | otherwise = do
+    let v = table V.! ((i0 + i) `mod` period)
+    MV.write o i (V2 v v)
+    go i0 (i + 1) n o
+
+-- The main audio calback
+
 callback :: MVar Int -> Status -> input -> MV.IOVector (V2 Float) -> IO StreamCallbackResult
 callback phase _ _ o = do
+  let n = MV.length o
   i0 <- takeMVar phase
-  go i0 0
+  go i0 0 n o
   putMVar phase $ i0 + n
   return Continue
-  where
-    n = MV.length o
-    go :: Int -> Int -> IO ()
-    go i0 i
-      | i == n = return ()
-      | otherwise = do
-        let v = table V.! ((i0 + i) `mod` period)
-        let v2 = table2 V.! ((i0 + i) `mod` period2)
-        let v3 = table3 V.! ((i0 + i) `mod` period3)
-        let v4 = table4 V.! ((i0 + i) `mod` period4)
-        -- Write 2 channels
-        let merge = v + v2 + v3 + v4
-        MV.write o i (V2 (v + v2 + v3 + v4) (v + v2 + v3 + v4))
-        go i0 (i + 1)
+
+
+-- IO stuff
 
 app :: Parser (IO ())
 app = do
@@ -70,7 +72,7 @@ app = do
       putStrLn $ "buffer size: " ++ show buf ++ " samples"
       putStrLn "–––––––––––"
       putStrLn "Please choose a decvice:"
-      forM_ (zip [0 :: Int ..] devs) $ \(i, dev) -> 
+      forM_ (zip [0 :: Int ..] devs) $ \(i, dev) ->
         putStrLn $ show i ++ ": " ++ deviceName dev
       devI <- getLine
       let dev = devs !! read devI
@@ -78,11 +80,11 @@ app = do
       withStream rate buf noConnection output mempty (callback phase)
         $ \s -> do
           setStreamFinishedCallback s $ putStrLn "Done"
-          withStartStream s $ threadDelay $ 1000 * 1000
+          withStartStream s $ threadDelay $ 1000 * 10000
 
 
 main :: IO ()
 main = join $ execParser (info app mempty)
 
 
-            
+
