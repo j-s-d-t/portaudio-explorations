@@ -12,28 +12,11 @@ import           System.PortAudio
 period :: Int
 period = 100
 
-period2 :: Int
-period2 = 4410
-
-period3 :: Int
-period3 = 8000
-
-period4 :: Int
-period4 = 2000
 
 -- Create tables
 
 table :: V.Vector Float
 table = V.fromList [sin t | i <- [0..period - 1], let t = fromIntegral i / fromIntegral period * 2 * pi]
-
-table2 :: V.Vector Float
-table2 = V.fromList [sin t | i <- [0..period2 - 1], let t = fromIntegral i / fromIntegral period2 * 2 * pi]
-
-table3 :: V.Vector Float
-table3 = V.fromList [sin t | i <- [0..period3 - 1], let t = fromIntegral i / fromIntegral period3 * 2 * pi]
-
-table4 :: V.Vector Float
-table4 = V.fromList [sin t | i <- [0..period4 - 1], let t = fromIntegral i / fromIntegral period4 * 2 * pi]
 
 
 
@@ -61,7 +44,7 @@ callback phase _ _ o = do
 app :: Parser (IO ())
 app = do
   rate <- option auto $ long "rate" <> help "sampling rate" <> value 44100
-  buf <- option auto $ long "buffer" <> help "number of samples for the buffer" <> value 1024
+  buf <- option auto $ long "buffer" <> help "number of samples for the buffer" <> value 64
   device <- option auto $ long "device" <> help "device index" <> value (-1)
   pure $ withPortAudio $ do
     phase <- newMVar 0
