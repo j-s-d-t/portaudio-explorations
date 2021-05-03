@@ -8,9 +8,20 @@ import           Linear                       (V2 (..))
 import           Options.Applicative
 import           System.PortAudio
 
+
+-- TODO:
+-- Create an interpolation algorithm to map one table onto another (up/downsample)
+
+sr :: Double 
+sr = 44100
+
+freqToSamps :: Double -> Int
+freqToSamps freq =
+  round $ sr / freq
+
 -- Set the periods
 period :: Int
-period = 100
+period = freqToSamps 440
 
 
 -- Create tables
