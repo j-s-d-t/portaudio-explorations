@@ -1,8 +1,10 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ApplicativeDo #-}
 {-# LANGUAGE LambdaCase    #-}
 {-# OPTIONS_GHC -Wno-unused-matches #-}
 {-# OPTIONS_GHC -Wno-type-defaults #-}
 import           Control.Concurrent
+import GHC.Float
 import           Control.Monad
 import qualified Data.Vector.Storable         as V
 import qualified Data.Vector.Storable.Mutable as MV
@@ -15,7 +17,10 @@ import           System.PortAudio
 -- Create an interpolation algorithm to map one table onto another (up/downsample)
 
 sr :: Double
-sr = 44100
+sr = 22050
+
+bufferSize :: Int
+bufferSize = 128
 
 freqToSamps :: Double -> Int
 freqToSamps freq =
@@ -33,9 +38,18 @@ table = V.fromList [sin t | i <- [0..period - 1], let t = fromIntegral i / fromI
 
 -- Define signal funcions
 
-sigFunc :: Int -> Int -> Float
-sigFunc i1 i2 =
-  table V.! ((i1 + i2) `mod` period)
+sineTable :: Int -> Int -> Float
+sineTable buf tick =
+  table V.! ((buf + tick) `mod` period)
+
+accum :: Float -> Int -> Int -> Float
+accum freq buf tick =
+  let
+    inc =  1 / (double2Float sr / freq)
+  in
+    int2Float ((buf + tick) `mod` freqToSamps (float2Double freq)) * inc
+
+
 
 -- The main audio callback
 -- This gets called each buffer cycle and contains a function that fills the output buffer each cycle
@@ -54,20 +68,21 @@ callback phase _ input output = do
   return Continue
   where
     go :: Int -> Int -> Int -> MV.IOVector (V2 Float) -> IO ()
-    go i0 i n o
-      | i == n = return ()
+    go buffCount tick buffLength outBuff
+      | tick == buffLength = return ()
       | otherwise = do
-        let v = sigFunc i0 i
-        MV.write o i (V2 v v)
-        go i0 (i + 1) n o
+        let v = accum 100 buffCount tick
+        print v
+        MV.write outBuff tick (V2 v v)
+        go buffCount (tick + 1) buffLength outBuff
 
 
 -- IO stuff
 
 app :: Parser (IO ())
 app = do
-  rate <- option auto $ long "rate" <> help "sampling rate" <> value 44100
-  buf <- option auto $ long "buffer" <> help "number of samples for the buffer" <> value 64
+  rate <- option auto $ long "rate" <> help "sampling rate" <> value sr
+  buf <- option auto $ long "buffer" <> help "number of samples for the buffer" <> value bufferSize
   device <- option auto $ long "device" <> help "device index" <> value (-1)
   pure $ withPortAudio $ do
     phase <- newMVar 0
