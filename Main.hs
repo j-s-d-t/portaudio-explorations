@@ -20,7 +20,7 @@ sr :: Double
 sr = 22050
 
 bufferSize :: Int
-bufferSize = 128
+bufferSize = 64
 
 freqToSamps :: Double -> Int
 freqToSamps freq =
@@ -33,48 +33,43 @@ period = freqToSamps 440
 
 -- Create tables
 
-table :: V.Vector Float
-table = V.fromList [sin t | i <- [0..period - 1], let t = fromIntegral i / fromIntegral period * 2 * pi]
+sineTable :: Int -> V.Vector Float
+sineTable size = 
+  V.fromList [sin t | i <- [0..size - 1], let t = fromIntegral i / fromIntegral size * 2 * pi]
 
 -- Define signal funcions
 
-sineTable :: Int -> Int -> Float
-sineTable buf tick =
-  table V.! ((buf + tick) `mod` period)
+sine :: Int -> Int -> Float
+sine buf tick =
+  sineTable 512 V.! ((buf + tick) `mod` period)
 
-accum :: Float -> Int -> Int -> Float
-accum freq buf tick =
-  let
-    inc =  1 / (double2Float sr / freq)
-  in
-    int2Float ((buf + tick) `mod` freqToSamps (float2Double freq)) * inc
-
-
+writeSamples :: Int -> Int -> Int -> MV.IOVector (V2 Float) -> IO ()
+writeSamples buffCount tick buffLength outBuff
+  | tick == buffLength = return ()
+  | otherwise = do
+    let v = sine buffCount tick
+    print v
+    MV.write outBuff tick (V2 v v)
+    writeSamples buffCount (tick + 1) buffLength outBuff
 
 -- The main audio callback
 -- This gets called each buffer cycle and contains a function that fills the output buffer each cycle
 
 callback :: MVar Int -> Status -> input -> MV.IOVector (V2 Float) -> IO StreamCallbackResult
 callback phase _ input output = do
-  -- Get the length of the output buffer
+  -- Get the size of the output buffer frame
   let n = MV.length output
   -- Get the phase
   i0 <- takeMVar phase
-  -- Write values into the output buffer using a signal function staturting at 0
-  go i0 0 n output
+  -- Write values into the output buffer using a signal function starting at 0
+  writeSamples i0 0 n output
+  -- print i0
   -- incriment the phase by the buffer size
   putMVar phase $ i0 + n
   -- Stream callback result
   return Continue
-  where
-    go :: Int -> Int -> Int -> MV.IOVector (V2 Float) -> IO ()
-    go buffCount tick buffLength outBuff
-      | tick == buffLength = return ()
-      | otherwise = do
-        let v = accum 100 buffCount tick
-        print v
-        MV.write outBuff tick (V2 v v)
-        go buffCount (tick + 1) buffLength outBuff
+
+
 
 
 -- IO stuff
@@ -110,13 +105,10 @@ app = do
       devO <- getLine
       let outDev = outDevs !! read devO
       let output = streamParameters outDev 0
-
-
       withStream rate buf noConnection  output mempty (callback phase)
         $ \s -> do
           setStreamFinishedCallback s $ putStrLn "Done"
           withStartStream s $ threadDelay $ 1000 * 10000
-
 
 main :: IO ()
 main = join $ execParser (info app mempty)
